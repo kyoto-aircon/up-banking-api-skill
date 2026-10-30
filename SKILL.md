@@ -1,13 +1,14 @@
 ---
 name: up-banking-api
 description: "Query Up bank: accounts, transactions, balances, spending."
-version: 1.1.0
-author: "up-banking-api-skill contributors (see CONTRIBUTING.md)"
+version: 1.2.0
+author: "kyoto-aircon, Hermes Agent"
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [finance, up-bank, banking, transactions, open-banking]
+    category: finance
     related_skills: [stocks]
 ---
 
@@ -24,6 +25,8 @@ Requires a Personal Access Token scoped to the user's own account.
 | Features product tree | https://up.com.au/tree/ |
 | Support | https://up.com.au/support/ |
 | API documentation | https://developer.up.com.au |
+| API reference for agents (llms.txt) | https://developer.up.com.au/llms.txt |
+| Token portal | https://api.up.com.au |
 | OpenAPI spec (GitHub) | https://github.com/up-banking/api |
 | Community projects | https://github.com/up-banking/api/blob/master/community/EXAMPLES.md |
 | API changelog | https://github.com/up-banking/api/issues/31 |
@@ -39,32 +42,38 @@ Requires a Personal Access Token scoped to the user's own account.
 ## Prerequisites
 
 1. An Up bank account (get it at https://up.com.au)
-2. A Personal Access Token from the Up app: swipe right → Data sharing → Personal Access Token → Generate a token
-3. Store the token with `hermes config set UP_BANKING_PAT <token>` — the full string including the `up:yeah:` prefix
+2. A Personal Access Token from the Up app: swipe right → Data sharing → Personal Access Token → Generate a token. Tokens can be issued with an expiry — note the date and reissue before it lapses
+3. Store the token with `hermes config set UP_BANKING_PAT <token>` — the full string including the `up:yeah:` prefix. Hermes injects it into new sessions as `$UP_BANKING_PAT`
 4. Python 3.8+ and `curl`
 
 ## How to Run
 
-The helper script wraps the common queries. Set the script path for easy reuse:
+Resolve this skill's script directory once (works wherever the skill is installed):
 
 ```bash
-SCRIPT=~/.hermes/skills/finance/up-banking-api/scripts/up_client.py
+SCRIPT_DIR=$(dirname "$(find "${HERMES_HOME:-$HOME/.hermes}/skills" -path '*up-banking-api*/scripts/up_client.py' | head -1)")
+UP="$SCRIPT_DIR/up_client.py"
+ANALYSIS="$SCRIPT_DIR/analysis.py"
+```
 
-python $SCRIPT ping
-python $SCRIPT accounts
-python $SCRIPT transactions
-python $SCRIPT transactions --page-size 5
-python $SCRIPT transactions --account-id <uuid>
-python $SCRIPT account --account-id <uuid>
-python $SCRIPT categories
-python $SCRIPT webhooks
+Then:
+
+```bash
+python "$UP" ping
+python "$UP" accounts
+python "$UP" transactions
+python "$UP" transactions --page-size 5
+python "$UP" transactions --account-id <uuid>
+python "$UP" account --account-id <uuid>
+python "$UP" categories
+python "$UP" webhooks
+```
 
 Spending analysis (requires Hermes for `::preview` widget):
 
 ```bash
-ANALYSIS=~/.hermes/skills/finance/up-banking-api/scripts/analysis.py
-python $ANALYSIS summary --days 30
-python scripts/analysis.py widget --days 14    # outputs ::preview directive
+python "$ANALYSIS" summary --days 30
+python "$ANALYSIS" widget --days 14    # outputs ::preview directive
 ```
 
 Or directly with curl (the `$UP_BANKING_PAT` env var is available inside Hermes sessions):
@@ -92,7 +101,7 @@ List all accounts with ID, display name, balance, and type (TRANSACTIONAL or SAV
 Get a single account by its UUID. Shows the same fields as `accounts` but for one account.
 
 ### `transactions [--account-id <id>] [--page-size N] [--json]`
-Recent transactions, newest first. Default 20. Scope to one account with `--account-id`, adjust count with `--page-size`. Pass `--json` for structured output the agent can pipe through `jq` or Python for spending analysis — see the "For AI Agents" section in the README.
+Recent transactions, newest first. The script requests 100 per page by default (the API's own default varies and is often 20); scope to one account with `--account-id`, adjust with `--page-size` (the API caps pages at 100). Pass `--json` for structured output the agent can pipe through `jq` or Python for spending analysis — see the "For AI Agents" section in the README.
 
 ### `categories`
 List all transaction categories with IDs.
@@ -141,8 +150,11 @@ curl -s --globoff -X DELETE -H "Authorization: Bearer $UP_BANKING_PAT" \
 | GET | /categories | List all categories |
 | GET | /categories/{id} | Single category |
 | GET | /tags | List all tags |
+| GET | /attachments | List attachments |
+| GET | /attachments/{id} | Single attachment (temporary `fileURL`) |
 | POST | /webhooks | Create webhook |
 | GET | /webhooks | List webhooks |
+| GET | /webhooks/{id} | Single webhook |
 | DELETE | /webhooks/{id} | Delete webhook |
 | POST | /webhooks/{webhookId}/ping | Test webhook |
 | GET | /webhooks/{webhookId}/logs | Webhook delivery logs |
@@ -153,25 +165,27 @@ Responses follow JSON:API spec (`data` → array of resource objects, `links` fo
 
 **Account:** `id`, `displayName`, `accountType` (TRANSACTIONAL or SAVER), `ownershipType`, `balance` (currencyCode + value + valueInBaseUnits), `createdAt`.
 
-**Transaction:** `id`, `status` (HELD or SETTLED), `rawText`, `description`, `amount` (currencyCode + value + valueInBaseUnits), `settledAt`, `createdAt`, category/tags relationships.
+**Transaction:** `id`, `status` (HELD or SETTLED), `rawText`, `description`, `message`, `amount` (currencyCode + value + valueInBaseUnits), `settledAt`, `createdAt`, category/tags relationships.
+
+**Attachment:** `id`, `createdAt`, `fileURL` (temporary download link), `fileURLExpiresAt`, `fileExtension`, `fileContentType`. Fetch a fresh `fileURL` when it expires.
 
 ## Pitfalls
 
 - **Square brackets in query params** need `--globoff` flag on curl, or URL-encode as `%5B`/`%5D` to avoid bash glob expansion.
 - **Token includes the `up:yeah:` prefix** — store the full string as returned by the app. The API requires this prefix; stripping it causes a 401 error.
-- **Rate limits** are undocumented but generous. Default page size is 20; max 50 per page for bulk pulls.
-- **The PAT is personal** — it grants full read access to your accounts. Stored in `.env` via `hermes config set` — auto-redacted from Hermes logs by default.
-- **Pagination** is cursor-based via `links.next`. The helper script shows a stderr message when more pages are available.
+- **Rate limits** are undocumented but generous. Pages cap at `page[size]=100`; the helper follows `links.next` up to `--limit` (default 1000), so prefer its pagination over hand-rolled loops.
+- **The PAT is personal** — it grants full read access to your accounts. Store it with `hermes config set UP_BANKING_PAT`; Hermes redacts it from logs and injects it as an env var in new sessions. Never echo it.
 - **Webhooks** require a public callback URL. This skill lists and manages webhooks but does not include a receiver.
 - **MSYS shell** on Windows: use `C:/...` paths for native tools; avoid `/tmp` for persistent files.
 
 ## Verification
 
 ```bash
-SCRIPT=~/.hermes/skills/finance/up-banking-api/scripts/up_client.py
-python $SCRIPT ping        # → pong — <uuid>
-python $SCRIPT accounts    # → at least one account row
-python $SCRIPT transactions  # → at least one transaction row
+SCRIPT_DIR=$(dirname "$(find "${HERMES_HOME:-$HOME/.hermes}/skills" -path '*up-banking-api*/scripts/up_client.py' | head -1)")
+UP="$SCRIPT_DIR/up_client.py"
+python "$UP" ping        # → pong — <uuid>
+python "$UP" accounts    # → at least one account row
+python "$UP" transactions  # → at least one transaction row
 ```
 
 ## Limitations

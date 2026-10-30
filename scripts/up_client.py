@@ -12,56 +12,22 @@ import urllib.error
 BASE = "https://api.up.com.au/api/v1"
 
 
-def _env_paths():
-    """Return possible .env paths in priority order."""
-    paths = []
-    # 1. HERMES_HOME env var
-    hh = os.environ.get("HERMES_HOME")
-    if hh:
-        paths.append(os.path.join(hh, ".env"))
-    # 2. AppData/local (canonical for Windows desktop app)
-    localappdata = os.environ.get("LOCALAPPDATA")
-    if localappdata:
-        paths.append(os.path.join(localappdata, "hermes", ".env"))
-    # 3. User home (canonical for CLI)
-    paths.append(os.path.expanduser("~/.hermes/.env"))
-    return paths
-
-
-def _dotenv_val(key):
-    """Read a key from the first .env file that contains it."""
-    for env_path in _env_paths():
-        try:
-            with open(env_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith(key + "="):
-                        val = line.split("=", 1)[1].strip()
-                        val = val.strip("\"'")
-                        if val:
-                            return val
-        except (FileNotFoundError, PermissionError, OSError):
-            continue
-    return None
-
-
 def _token():
-    # 1. environment variable (set when running inside Hermes)
+    """Token from the Hermes-injected environment only.
+
+    Deliberately no credentials-file parsing: Hermes' skill scanner hard-blocks
+    community skills that read its config files, and the env var is the
+    supported interface for both sessions and standalone runs.
+    """
     tok = os.environ.get("UP_BANKING_PAT")
     if tok:
         return tok
-    # 2. .env files (AppData first, then home)
-    tok = _dotenv_val("UP_BANKING_PAT")
-    if tok:
-        return tok
-    # 3. legacy file-based storage
-    path = os.path.expanduser("~/.hermes/secrets/up-banking-pat")
-    try:
-        with open(path) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        pass
-    print("error: set UP_BANKING_PAT via `hermes config set UP_BANKING_PAT <token>`", file=sys.stderr)
+    print(
+        "error: UP_BANKING_PAT is not set. Store it with "
+        "`hermes config set UP_BANKING_PAT <token>` (applies to new sessions), "
+        "or export UP_BANKING_PAT for a standalone run.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 

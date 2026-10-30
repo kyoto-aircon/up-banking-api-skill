@@ -19,7 +19,15 @@ Keep changes scoped to the skill and its helper script. If you're adding a new A
 
 ## Upstream PR
 
-When the skill is mature enough, the goal is to contribute it to `NousResearch/hermes-agent/optional-skills/finance/up-banking-api/`. At that point the CONTRIBUTING process shifts to the main Hermes repo. This repo remains the development staging ground.
+Status: **not yet submitted** — the skill still lives only in this repo. The target is
+`NousResearch/hermes-agent/optional-skills/finance/up-banking-api/` (optional tier, `finance`
+category). An upstream PR also needs:
+
+- `tests/skills/test_up_banking_api_skill.py` — stdlib + pytest, no live network
+- a regenerated docs page (`python website/scripts/generate-skill-docs.py`)
+
+Main-repo review standards apply there: description ≤ 60 chars, `author` crediting the
+human first, no machine-local paths. This repo remains the development staging ground.
 
 ## Questions
 

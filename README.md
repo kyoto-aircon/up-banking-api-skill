@@ -9,6 +9,7 @@ Read-only access to [Up Bank](https://up.com.au) (Australian neobank) account da
 - **Accounts** — list all accounts with balances, types, and IDs
 - **Transactions** — recent transactions across all accounts or per account, with adjustable page size
 - **Categories & Tags** — list, categorise transactions, attach/remove tags
+- **Attachments** — list receipt/document attachments (temporary download URLs)
 - **Webhooks** — create, list, and manage webhook notifications
 - **Ping** — connection health check
 
@@ -28,20 +29,19 @@ This is a **personal-scope** integration. The API token grants access only to th
 hermes skills tap add kyoto-aircon/up-banking-api-skill
 
 # Install the skill
-hermes skills install kyoto-aircon/up-banking-api-skill/up-banking-api
+hermes skills install kyoto-aircon/up-banking-api-skill/up-banking-api --category finance
 
 # Store your API token
 hermes config set UP_BANKING_PAT <your-token>
 
-# Verify it works
-cd ~/.hermes/skills
-find . -name up_client.py -path "*/up-banking-api/*"
-# then cd to that directory and run python scripts/up_client.py ping
+# Verify it works (new session picks up the token)
+find "${HERMES_HOME:-$HOME/.hermes}/skills" -name up_client.py -path '*up-banking-api*'
+# then cd to that directory and run: python scripts/up_client.py ping
 ```
 
 Or install directly from URL:
 ```bash
-hermes skills install https://raw.githubusercontent.com/kyoto-aircon/up-banking-api-skill/main/SKILL.md --name up-banking-api
+hermes skills install https://raw.githubusercontent.com/kyoto-aircon/up-banking-api-skill/main/SKILL.md --name up-banking-api --category finance
 ```
 
 ## Usage
@@ -59,7 +59,7 @@ python scripts/up_client.py webhooks
 
 ## For AI Agents
 
-See [AGENTS.md](AGENTS.md) — credential resolution, command reference, output formats, and pitfalls.
+See [AGENTS.md](AGENTS.md) — token handling, command reference, output formats, and pitfalls.
 
 ## API Coverage
 
@@ -76,15 +76,21 @@ See [AGENTS.md](AGENTS.md) — credential resolution, command reference, output 
 | DELETE | /transactions/{id}/relationships/tags | Remove tags |
 | GET | /categories | List categories |
 | GET | /tags | List tags |
+| GET | /attachments | List attachments |
+| GET | /attachments/{id} | Get attachment |
 | POST | /webhooks | Create webhook |
 | GET | /webhooks | List webhooks |
+| GET | /webhooks/{id} | Get webhook |
 | DELETE | /webhooks/{id} | Delete webhook |
 
 ## Links
 
 - [Up API Documentation](https://developer.up.com.au)
+- [Up API reference for agents (llms.txt)](https://developer.up.com.au/llms.txt)
 - [Up API OpenAPI Spec (GitHub)](https://github.com/up-banking/api)
 - [Community API projects](https://github.com/up-banking/api/blob/master/community/EXAMPLES.md)
+- [Up API changelog](https://github.com/up-banking/api/issues/31)
+- [Claim your Personal Access Token](https://api.up.com.au)
 - [Up Website](https://up.com.au)
 - [Up Features & Product Tree](https://up.com.au/tree/)
 
