@@ -32,6 +32,31 @@ Then call `python "$UP" <command> [flags]`.
 
 All output is plain-text tabular format on stdout. Errors go to stderr and exit non-zero. `transactions` follows `links.next` and stops silently at `--limit` (default 1000) — raise it for deeper history.
 
+## Read the note before you ask the user anything
+
+Every transaction carries three distinct text fields and only one of them is the user's:
+
+| Field | Source | Example |
+|-------|--------|---------|
+| `rawText` | bank / card processor | `SQ *EXAMPLE CAFE, SYDNEY` — processor prefix and clearing city, not the merchant |
+| `description` | Up | `Example Cafe` — Up's cleaned name, often still a cipher |
+| `message` | **the account holder** | `team lunch, split 4 ways` — the real vendor, purpose, recipient, or claim reference |
+
+**Read `message` before asking the user what a charge was.** A row whose `description` is an
+opaque processor string is frequently already explained there. Asking anyway wastes a round trip
+and makes the agent look like it never read the data it fetched.
+
+```bash
+python "$UP" notes     # every annotated transaction in one call
+```
+
+`transactions` prints a terse table that does **not** include `message`. Use `notes` or
+`transactions --json` when you need the notes.
+
+Notes are also evidence: they commonly carry claim or invoice references that reconcile a credit
+back to a statement, and they settle what a transaction was. A note saying `rent share` means it
+was a shared rent payment, whatever Up labelled it. Booking it is still a judgement call.
+
 ## Available commands
 
 | Command | Flags | Returns |
@@ -40,6 +65,7 @@ All output is plain-text tabular format on stdout. Errors go to stderr and exit 
 | `accounts` | — | table: id, name, balance, type |
 | `account` | `--account-id <id>` | labelled fields: ID, Name, Balance, Type, Created |
 | `transactions` | `--account-id <id>`, `--page-size <n>`, `--json` | table or full JSON with all attributes |
+| `notes` | — | every transaction with a non-empty `message`, plus the note |
 | `categories` | — | table: id, name |
 | `webhooks` | — | table: id, url, active |
 
@@ -58,9 +84,12 @@ The widget command outputs a `::preview{file=...}` directive. In the Hermes desk
 ## Data model notes (learned from analysis)
 
 - **Amount sign**: negative = money out (debit), positive = money in (credit).
-- **Internal transfers** between the user's own accounts appear as transactions and **must be excluded** from spending/income/savings math. The analysis script excludes these automatically via a regex matching `Transfer from/to`, `Cover from/to`, `Quick save transfer from/to`, `Round Up`, `Final interest payment from`.
+- **`message` is user-written, not bank data.** See the section above — it is the field that names the real vendor, and the one a terse table hides.
+- **Internal transfers** between the user's own accounts appear as transactions and **must be excluded** from spending/income/savings math. The analysis script excludes these automatically via a regex matching `Transfer from/to`, `Cover from/to`, `Quick save transfer from/to`, `Round Up`, `Final interest payment from`. Each transfer appears on **both legs**, so the excluded row count runs about double the number of transfers.
 - **2Up / joint accounts**: global `transactions` (without `--account-id`) includes both individual AND joint (2Up) accounts. When breaking down expenses be aware joint household bills will appear. Use `--account-id <id>` to isolate.
-- **Categories are hierarchical**: parent (e.g. `home`, `good-life`) → children (e.g. `groceries`, `eating-out`). Transactions carry a `category` slug; parent relationship is available in the full JSON.
+- **Categories are hierarchical**: parent (e.g. `home`, `good-life`) -> children (e.g. `groceries`, `eating-out`). Transactions carry a `category` slug; parent relationship is available in the full JSON.
+- **Up's categories are not accounting categories.** A category name can misdescribe what a transaction actually was — an `investments` row may be a capital movement rather than an expense. Re-categorise on the working papers rather than echoing Up's labels into a report.
+- **Money from family and friends is not income.** Birthday money, gifts, and peer transfers are transfers between people. Report them on their own line.
 
 ## Transaction filters (CLI)
 
@@ -71,19 +100,25 @@ python scripts/up_client.py transactions --status HELD
 python scripts/up_client.py transactions --account-id <uuid> --since 2026-09-01
 python scripts/up_client.py transactions --limit 500      # follow pagination up to N
 python scripts/up_client.py transactions --no-cache
+python scripts/up_client.py notes
 ```
 
 Responses are cached 15 minutes to avoid rate limits. Pass `--no-cache` to force fresh data.
+
+Note that `--page-size` sets the page size **per request**; it is not a cap on results. The
+helper follows `links.next` up to `--limit`. Rows come back ordered by `createdAt`, not
+`settledAt`, so sort explicitly before a date-bounded reconciliation.
 
 ## Validation framework (MANDATORY for financial analysis)
 
 Every financial analysis MUST present a validation section. Include the checks below that apply:
 
-1. **Show your working** — report the date range, transaction count before and after filtering, and what exclusions were applied. E.g. "Based on 20 transactions from 2026-09-01 to 2026-09-30 (45 raw, 25 excluded: internal transfers)."
+1. **Show your working** — report the date range, transaction count before and after filtering, and what exclusions were applied. E.g. based on 20 transactions from 2026-09-01 to 2026-09-30 (45 raw, 25 excluded: internal transfers).
 2. **Income = Expenses + Net** — verify the computed `income - expenses = net` balances. A mismatch means a filtering error.
 3. **Category exhaustiveness** — sum the category totals and compare to the overall total. Report if >1% of spending is uncategorised.
 4. **Spot-check samples** — show 2-3 sample transactions from the largest categories so the user can verify correct categorisation.
-5. **2Up awareness** — flag whether joint account spending is included. If the user has a 2Up account and you didn't isolate it, say so.
+5. **2Up awareness** — flag whether joint account spending is included. If the user has a 2Up account and you did not isolate it, say so.
+6. **Notes reviewed** — run `notes` and state whether any note changes the picture before presenting totals.
 
 ## Hermes-exclusive features
 
@@ -152,7 +187,9 @@ To find a category ID, run `python "$UP" categories` and grep the name.
 ## Pitfalls
 
 - **The `up:yeah:` prefix is required** — never strip it. The API returns 401 without it.
+- **The formatted table hides `message`.** A terse table is not the whole record; use `notes` or `--json`.
+- **Do not conflate `rawText`, `description` and `message`.** Processor string, Up's cleaned name, and the user's own note are three different things.
 - **Square brackets `[]` in query params** need URL-encoding (`%5B`/`%5D`) or `--globoff` on curl — raw brackets break bash's glob expansion.
 - **The PAT grants full read access** to all accounts. Never log it, echo it, or include it in tool output meant for the user.
-- **If the helper script exits with "UP_BANKING_PAT is not set"**, the env var is missing from this session. Re-run `hermes config set UP_BANKING_PAT <token>`; values are injected into new sessions, so start a new session if you just set it.
-- **Paginated responses** carry a `links.next` URL in the JSON body; the helper follows it until `--limit`. Don't hand-roll pagination by fetching `links.next` yourself — raise `--limit` instead.
+- **If the helper script says UP_BANKING_PAT is not set**, the env var is missing from this session. Re-run `hermes config set UP_BANKING_PAT <token>`; values are injected into new sessions, so start a new session if you just set it.
+- **Paginated responses** carry a `links.next` URL in the JSON body; the helper follows it until `--limit`. Do not hand-roll pagination by fetching `links.next` yourself — raise `--limit` instead.

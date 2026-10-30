@@ -129,9 +129,33 @@ def cmd_ping():
     print(f"pong — {mid}")
 
 
+def cmd_notes(use_cache=True):
+    """List transactions carrying a user note (the `message` field).
+
+    `message` is the account holder's own annotation from the Up app, not bank
+    data. It usually names the real vendor, the purpose, the recipient, or a
+    claim reference, so it is worth reading before asking anyone what a charge
+    was. The formatted `transactions` table deliberately stays terse and does
+    not include it; this command is how you see notes.
+    """
+    data = _req_paginated("/transactions?page%5Bsize%5D=100", limit=1000, use_cache=use_cache)
+    rows = [t for t in data if (t["attributes"].get("message") or "").strip()]
+    if not rows:
+        print("(no transactions carry a note)")
+        return
+    for t in rows:
+        a = t["attributes"]
+        amt = a["amount"]["value"]
+        rel = t.get("relationships", {}).get("category", {}).get("data")
+        cid = rel["id"] if rel else "uncategorised"
+        dt = (a.get("settledAt") or a.get("createdAt", ""))[:10]
+        print(f"{dt:10s}  ${amt:>8}  {a['status']:7s}  {cid:22s}  {a['description'] or ''}")
+        print(f"    note: {a['message']}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: up_client.py <ping|accounts|account|transactions|categories|webhooks> [--account-id <id>] [--page-size <n>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--category <slug>] [--status SETTLED|HELD] [--limit N] [--no-cache] [--json]", file=sys.stderr)
+        print("Usage: up_client.py <ping|accounts|account|transactions|categories|notes|webhooks> [--account-id <id>] [--page-size <n>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--category <slug>] [--status SETTLED|HELD] [--limit N] [--no-cache] [--json]", file=sys.stderr)
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -205,6 +229,8 @@ if __name__ == "__main__":
         else:
             for cat in data:
                 print(f"{cat['id']:36s}  {cat['attributes'].get('name','')}")
+    elif cmd == "notes":
+        cmd_notes(use_cache)
     elif cmd == "webhooks":
         data = _req_paginated("/webhooks", limit=100, use_cache=use_cache)
         for wh in data:

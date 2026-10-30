@@ -8,6 +8,7 @@ Read-only access to [Up Bank](https://up.com.au) (Australian neobank) account da
 
 - **Accounts** — list all accounts with balances, types, and IDs
 - **Transactions** — recent transactions across all accounts or per account, with adjustable page size
+- **Transaction notes** — read the notes you have attached to individual transactions (the `message` field)
 - **Categories & Tags** — list, categorise transactions, attach/remove tags
 - **Attachments** — list receipt/document attachments (temporary download URLs)
 - **Webhooks** — create, list, and manage webhook notifications
@@ -18,7 +19,7 @@ This is a **personal-scope** integration. The API token grants access only to th
 ## Prerequisites
 
 - [Up Bank](https://up.com.au) account
-- Personal Access Token (Up app → swipe right → Data sharing → Personal Access Token → Generate)
+- Personal Access Token (Up app -> swipe right -> Data sharing -> Personal Access Token -> Generate)
 - [Hermes Agent](https://hermes-agent.nousresearch.com) installed
 - Python 3.8+ and `curl`
 
@@ -53,9 +54,20 @@ python scripts/up_client.py accounts
 python scripts/up_client.py transactions
 python scripts/up_client.py transactions --page-size 5
 python scripts/up_client.py transactions --account-id <uuid> --page-size 50
+python scripts/up_client.py notes
 python scripts/up_client.py categories
 python scripts/up_client.py webhooks
 ```
+
+## Transaction notes
+
+Every transaction has three text fields, and only one is yours:
+
+- `rawText` — the raw card/bank descriptor, e.g. `SQ *EXAMPLE CAFE, SYDNEY`. The processor prefix and the clearing city, neither of which names the merchant.
+- `description` — Up's cleaned-up merchant name, e.g. `Example Cafe`. Often still a cipher.
+- `message` — **your own note**, written in the Up app. This is where you record the actual vendor, what it was for, who it was for, or a claim reference.
+
+If you annotate transactions in the Up app, `up_client.py notes` prints every transaction that carries a note, with the date, amount, status, category and description alongside it. The plain `transactions` table stays terse and does not include notes — use `notes`, or `transactions --json`, when you need them.
 
 ## For AI Agents
 
